@@ -100,7 +100,6 @@ jobs:
 
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag_name=v${version}-${timestamp}" >> "$GITHUB_OUTPUT"
-          ls -la package-assets
 
       - name: Upload to Private Repo Release
         env:
@@ -111,3 +110,11 @@ jobs:
             --title "VRCX-0 ${{ steps.collect.outputs.version }} (${{ steps.collect.outputs.tag_name }})" \
             --notes "Automated private release build" \
             package-assets/*
+
+      # 阅后即焚：构建完成并传回私有仓库后，自动删除公开仓库的本次运行记录与所有日志
+      - name: Clean Public Run History
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+        run: |
+          gh api -X DELETE "/repos/SENyiAi/VRCX-Builder/actions/runs/${GITHUB_RUN_ID}" || true
