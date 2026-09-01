@@ -1,0 +1,112 @@
+name: Build Windows App
+
+on:
+  repository_dispatch:
+    types: [trigger-build]
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Private repo branch to build'
+        required: true
+        default: 'master'
+
+concurrency:
+  group: windows-build-${{ github.event.client_payload.branch || github.event.inputs.branch || 'master' }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build Windows x86_64
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      PRIVATE_REPO: 'SENyiAi/VRCX-1'
+      TARGET_BRANCH: ${{ github.event.client_payload.branch || github.event.inputs.branch || 'master' }}
+      GH_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+
+    steps:
+      - name: Checkout Private Source Code
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.PRIVATE_REPO }}
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          ref: ${{ env.TARGET_BRANCH }}
+          fetch-depth: 0
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare Tauri Windows Config
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const tauriConfigPath = 'src-tauri/tauri.conf.json';
+          const outputConfigPath = 'src-tauri/tauri.build.windows.json';
+          const config = JSON.parse(fs.readFileSync(tauriConfigPath, 'utf8'));
+
+          config.bundle ??= {};
+          config.bundle.createUpdaterArtifacts = false;
+          config.bundle.targets = ['nsis'];
+          if (config.bundle.windows) {
+              delete config.bundle.windows.certificateThumbprint;
+              delete config.bundle.windows.signCommand;
+          }
+          fs.writeFileSync(outputConfigPath, JSON.stringify(config, null, 2));
+          NODE
+
+      - name: Build Windows Package
+        env:
+          VRCX_0_BUILD_LABEL: 'release'
+        run: |
+          npm run tauri:build -- --config src-tauri/tauri.build.windows.json --no-sign --bundles nsis
+
+      - name: Collect Dist Artifacts
+        id: collect
+        run: |
+          mkdir -p package-assets
+          mkdir -p portable-dist
+
+          version="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          timestamp="$(date +'%Y%m%d-%H%M')"
+          stem="VRCX-0_${version}_${timestamp}"
+
+          source="target/release/vrcx-0.exe"
+          nsis_dir="target/release/bundle/nsis"
+
+          # 1. 便携单文件
+          cp "$source" "package-assets/${stem}_portable.exe"
+
+          # 2. 便携 zip 包
+          cp "$source" "portable-dist/VRCX-0.exe"
+          (cd portable-dist && 7z a "../package-assets/${stem}_portable.zip" *)
+
+          # 3. NSIS 安装包
+          if compgen -G "${nsis_dir}/*.exe" > /dev/null; then
+              for f in "${nsis_dir}"/*.exe; do
+                  cp "$f" "package-assets/${stem}_setup.exe"
+              done
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag_name=v${version}-${timestamp}" >> "$GITHUB_OUTPUT"
+          ls -la package-assets
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.collect.outputs.tag_name }}
+          name: VRCX-0 ${{ steps.collect.outputs.version }} (${{ steps.collect.outputs.tag_name }})
+          files: package-assets/*
+          draft: false
+          prerelease: false
