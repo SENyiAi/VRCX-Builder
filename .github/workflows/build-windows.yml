@@ -102,11 +102,12 @@ jobs:
           echo "tag_name=v${version}-${timestamp}" >> "$GITHUB_OUTPUT"
           ls -la package-assets
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.collect.outputs.tag_name }}
-          name: VRCX-0 ${{ steps.collect.outputs.version }} (${{ steps.collect.outputs.tag_name }})
-          files: package-assets/*
-          draft: false
-          prerelease: false
+      - name: Upload to Private Repo Release
+        env:
+          GH_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+        run: |
+          gh release create "${{ steps.collect.outputs.tag_name }}" \
+            --repo "${{ env.PRIVATE_REPO }}" \
+            --title "VRCX-0 ${{ steps.collect.outputs.version }} (${{ steps.collect.outputs.tag_name }})" \
+            --notes "Automated private release build" \
+            package-assets/*
