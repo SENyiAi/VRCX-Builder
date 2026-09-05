@@ -4,7 +4,11 @@ on:
   schedule:
     # 每 20 分钟清扫一次已完成/已取消的历史 run 与缓存；
     # 构建自身的阅后即焚失败时，由此兜底，最坏残留 ≤20 分钟。
-    - cron: '*/20 * * * *'
+    # 错开整点刻度（:00/:20/:40），规避 GitHub 调度高峰导致的延迟或丢触发。
+    - cron: '7,27,47 * * * *'
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
