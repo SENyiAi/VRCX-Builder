@@ -10,6 +10,10 @@ on:
         required: true
         default: 'master'
 
+permissions:
+  actions: write
+  contents: read
+
 concurrency:
   group: windows-build-${{ github.event.client_payload.branch || github.event.inputs.branch || 'master' }}
   cancel-in-progress: true
@@ -33,7 +37,7 @@ jobs:
           repository: ${{ env.PRIVATE_REPO }}
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           ref: ${{ env.TARGET_BRANCH }}
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -42,10 +46,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24.x
-          cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          npm ci --no-fund --no-audit > deps.log 2>&1 || {
+            echo "npm ci failed:"
+            tail -n 40 deps.log
+            exit 1
+          }
 
       - name: Prepare Tauri Windows Config
         run: |
@@ -69,7 +77,13 @@ jobs:
         env:
           VRCX_0_BUILD_LABEL: 'release'
         run: |
-          npm run tauri:build -- --config src-tauri/tauri.build.windows.json --no-sign --bundles nsis
+          npm run tauri:build -- --config src-tauri/tauri.build.windows.json --no-sign --bundles nsis \
+            > build.log 2>&1 || {
+              echo "build failed:"
+              tail -n 80 build.log
+              exit 1
+            }
+          echo "build ok"
 
       - name: Collect Dist Artifacts
         id: collect
@@ -111,10 +125,13 @@ jobs:
             --notes "Automated private release build" \
             package-assets/*
 
-      # 阅后即焚：构建完成并传回私有仓库后，自动删除公开仓库的本次运行记录与所有日志
+      # 阅后即焚：用本仓库自身的 GITHUB_TOKEN（对 Builder 必有写权限）删除本次运行记录与日志。
+      # 此前误用仅限私有库的 PRIVATE_REPO_TOKEN 导致 403 被 || true 吞掉，run 全部残留公开侧。
+      # 若仍失败（如 run 处于不可删状态），私有库 trigger-builder 的 orphan sweep 会在下次调度时兜底清除。
       - name: Clean Public Run History
         if: always()
         env:
-          GH_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          gh api -X DELETE "/repos/SENyiAi/VRCX-Builder/actions/runs/${GITHUB_RUN_ID}" || true
+          gh api -X DELETE "/repos/${{ github.repository }}/actions/runs/${GITHUB_RUN_ID}" \
+            || echo "WARN: self-delete failed; orphan sweep on next dispatch will remove this run"
