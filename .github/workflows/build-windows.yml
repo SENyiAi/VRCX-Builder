@@ -125,11 +125,33 @@ jobs:
             --notes "Automated private release build" \
             package-assets/*
 
+      # 失败诊断：构建日志尾部推回私有库 diagnostics 分支（不公开），供本地读取定位
+      - name: Upload Build Diagnostics
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+        run: |
+          {
+            echo "=== build.log tail ==="
+            tail -n 150 build.log 2>/dev/null || echo "(no build.log)"
+            echo "=== deps.log tail ==="
+            tail -n 40 deps.log 2>/dev/null || echo "(no deps.log)"
+            echo "=== disk ==="
+            df -h / 2>/dev/null || true
+          } > diagnostics.log
+          git config user.email "ci@vrcx-0.local"
+          git config user.name "vrcx-0-diagnostics"
+          git checkout --orphan diagnostics-tmp
+          git reset
+          git add -f diagnostics.log
+          git commit -m "build diagnostics $(date -u +%FT%TZ)"
+          git push --force origin diagnostics-tmp:diagnostics
+
       # 阅后即焚：用本仓库自身的 GITHUB_TOKEN（对 Builder 必有写权限）删除本次运行记录与日志。
       # 此前误用仅限私有库的 PRIVATE_REPO_TOKEN 导致 403 被 || true 吞掉，run 全部残留公开侧。
-      # 若仍失败（如 run 处于不可删状态），私有库 trigger-builder 的 orphan sweep 会在下次调度时兜底清除。
+      # 失败的 run 保留（供浏览器排查），仅成功时清理。
       - name: Clean Public Run History
-        if: always()
+        if: success()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
