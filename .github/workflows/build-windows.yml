@@ -93,7 +93,7 @@ jobs:
 
           version="$(node -p "require('./src-tauri/tauri.conf.json').version")"
           timestamp="$(date +'%Y%m%d-%H%M')"
-          stem="VRCX-0_${version}_${timestamp}"
+          stem="VRCX-1-H_${version}_${timestamp}"
 
           source="target/release/vrcx-0.exe"
           nsis_dir="target/release/bundle/nsis"
@@ -102,7 +102,7 @@ jobs:
           cp "$source" "package-assets/${stem}_portable.exe"
 
           # 2. 便携 zip 包
-          cp "$source" "portable-dist/VRCX-0.exe"
+          cp "$source" "portable-dist/VRCX-1-H.exe"
           (cd portable-dist && 7z a "../package-assets/${stem}_portable.zip" *)
 
           # 3. NSIS 安装包
@@ -121,7 +121,7 @@ jobs:
         run: |
           gh release create "${{ steps.collect.outputs.tag_name }}" \
             --repo "${{ env.PRIVATE_REPO }}" \
-            --title "VRCX-0 ${{ steps.collect.outputs.version }} (${{ steps.collect.outputs.tag_name }})" \
+            --title "VRCX-1-H ${{ steps.collect.outputs.version }} (${{ steps.collect.outputs.tag_name }})" \
             --notes "Automated private release build" \
             package-assets/*
 
