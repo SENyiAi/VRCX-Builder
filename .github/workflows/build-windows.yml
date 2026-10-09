@@ -51,7 +51,7 @@ jobs:
         run: |
           npm ci --no-fund --no-audit > deps.log 2>&1 || {
             echo "npm ci failed:"
-            tail -n 40 deps.log
+            echo "Dependency diagnostics are stored in the private repository."
             exit 1
           }
 
@@ -80,7 +80,7 @@ jobs:
           npm run tauri:build -- --config src-tauri/tauri.build.windows.json --no-sign --bundles nsis \
             > build.log 2>&1 || {
               echo "build failed:"
-              tail -n 80 build.log
+              echo "Build diagnostics are stored in the private repository."
               exit 1
             }
           echo "build ok"
